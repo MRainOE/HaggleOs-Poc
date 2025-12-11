@@ -1,5 +1,76 @@
 // content.js
 
+let isAnalyzing = false;
+
+function createOrGetPanel() {
+  let panel = document.getElementById('haggleos-panel');
+  if (panel) return panel;
+
+  panel = document.createElement('div');
+  panel.id = 'haggleos-panel';
+
+  Object.assign(panel.style, {
+    position: 'fixed',
+    right: '20px',
+    bottom: '70px', // above the button
+    zIndex: '10000',
+    padding: '12px 16px',
+    maxWidth: '280px',
+    backgroundColor: 'white',
+    color: '#111',
+    borderRadius: '10px',
+    boxShadow: '0 4px 10px rgba(0,0,0,0.15)',
+    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    fontSize: '13px',
+    lineHeight: '1.4',
+  });
+
+  document.body.appendChild(panel);
+  return panel;
+}
+
+function startLoadingAnimation(panel) {
+  // Set initial content with dots placeholders on all lines
+  panel.innerHTML = `
+    <div style="font-weight: 600; margin-bottom: 4px;">Analyzing deal...</div>
+    <div>🔍 Checking market price<span class="haggleos-dots">.</span></div>
+    <div>👀 Inspecting images<span class="haggleos-dots">.</span></div>
+    <div>🧠 Thinking of negotiation strategy<span class="haggleos-dots">.</span></div>
+  `;
+
+  const dotsEls = panel.querySelectorAll('.haggleos-dots');
+  if (!dotsEls || dotsEls.length === 0) return;
+
+  let step = 1;
+  const intervalId = window.setInterval(() => {
+    step = (step % 3) + 1; // 1 → 2 → 3 → 1...
+    const dots = '.'.repeat(step);
+    dotsEls.forEach((el) => {
+      el.textContent = dots;
+    });
+  }, 500);
+
+  // store interval id on the panel so we can stop it later
+  panel.dataset.dotsIntervalId = String(intervalId);
+}
+
+function stopLoadingAnimation(panel) {
+  const idStr = panel.dataset.dotsIntervalId;
+  if (idStr) {
+    const id = Number(idStr);
+    window.clearInterval(id);
+    delete panel.dataset.dotsIntervalId;
+  }
+}
+
+function showError(panel, message) {
+  stopLoadingAnimation(panel);
+  panel.innerHTML = `
+    <div style="font-weight: 600; margin-bottom: 4px; color: #b91c1c;">Something went wrong</div>
+    <div>${message}</div>
+  `;
+}
+
 function initHaggleOS() {
   // 0) Only run on product pages (URLs that contain /itm/)
   if (!location.pathname.includes('/itm/')) {
@@ -33,9 +104,25 @@ function initHaggleOS() {
     boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
   });
 
-    // 3) Click handler: scrape data & send to API
+  // 3) Click handler: guard, scrape data, show loading UI & send to API
   button.addEventListener('click', async () => {
+    if (isAnalyzing) {
+      // Ignore extra clicks while we're already analyzing
+      return;
+    }
+    isAnalyzing = true;
+
+    // visually disable button
+    button.disabled = true;
+    button.innerText = '⏳ Analyzing...';
+    button.style.opacity = '0.7';
+    button.style.cursor = 'not-allowed';
+
     console.log('HaggleOS: Analyze button clicked.');
+
+    // --- PANEL: show "Scanning..." UI with dots animation ---
+    const panel = createOrGetPanel();
+    startLoadingAnimation(panel);
 
     // --- TITLE ---
     let titleEl =
@@ -106,8 +193,7 @@ function initHaggleOS() {
 
     console.log('HaggleOS payload (before sending):', payload);
 
-    // --- SEND TO API ---
-    const API_URL = "https://haggle-os-poc.vercel.app/api/analyze"; 
+    const API_URL = 'https://haggle-os-poc.vercel.app/api/analyse'; 
 
     try {
       const response = await fetch(API_URL, {
@@ -118,17 +204,29 @@ function initHaggleOS() {
 
       if (!response.ok) {
         console.error('HaggleOS: API error status', response.status);
-        return;
+        showError(panel, `API error (status ${response.status}).`);
+      } else {
+        const result = await response.json();
+        console.log('HaggleOS result from API:', result);
+        // Next phase we'll render result nicely here
+        stopLoadingAnimation(panel);
+        panel.innerHTML = `
+          <div style="font-weight: 600; margin-bottom: 4px;">Analysis complete ✅</div>
+          <div>Check console for raw JSON result (UI coming next).</div>
+        `;
       }
-
-      const result = await response.json();
-      console.log('HaggleOS result from API:', result);
-      // Later: show this nicely in a popup instead of just console.log
     } catch (err) {
       console.error('HaggleOS: Failed to call API', err);
+      showError(panel, 'Failed to reach backend. Please try again.');
+    } finally {
+      // Re-enable button
+      isAnalyzing = false;
+      button.disabled = false;
+      button.innerText = 'Analyze Deal';
+      button.style.opacity = '1';
+      button.style.cursor = 'pointer';
     }
   });
-
 
   // 4) Attach to page
   document.body.appendChild(button);

@@ -1,4 +1,4 @@
-// app/api/analyze/route.ts
+// app/api/analyse/route.ts
 import { NextResponse } from 'next/server';
 
 const CORS_HEADERS = {
@@ -22,9 +22,12 @@ export async function POST(request: Request) {
 
   // Fake response for now
   const responseData = {
-    decision: 'NEGOTIATE',
-    message: 'Hello from Vercel API (with CORS)!',
-  };
+  "decision": "NEGOTIATE",
+  "market_price": 450,
+  "defects_found": ["scratch on lens"],
+  "suggested_offer": 380,
+  "draft_message": "Hi, I noticed..."
+};
 
   return NextResponse.json(responseData, {
     headers: CORS_HEADERS,
