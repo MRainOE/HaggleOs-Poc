@@ -3,7 +3,7 @@
   "name": "HaggleOS Deal Analyzer",
   "version": "1.0.0",
   "description": "Helps analyze eBay deals using our AI backend.",
-  "permissions": ["activeTab", "scripting"],
+  "permissions": ["activeTab", "scripting", "storage"],
   "content_scripts": [
     {
       "matches": [
