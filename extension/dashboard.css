@@ -1,0 +1,172 @@
+:root{
+  --bg: #0b0f17;          /* near-black background */
+  --card: #0f1624;        /* card background */
+  --card2: #101b2e;       /* slightly brighter section bg */
+  --text: #e5e7eb;        /* main text */
+  --muted: #9aa4b2;       /* muted text */
+  --border: #1f2a3d;      /* borders */
+  --blue: #3b82f6;        /* primary accent */
+  --blueSoft: rgba(59,130,246,.14);
+  --danger: #ef4444;      /* red */
+  --shadow: 0 14px 30px rgba(0,0,0,.45);
+  --radius: 14px;
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+  background: radial-gradient(1200px 600px at 20% -10%, rgba(59,130,246,.18), transparent 55%),
+              radial-gradient(900px 500px at 90% 10%, rgba(147,51,234,.14), transparent 55%),
+              var(--bg);
+  color:var(--text);
+}
+
+.container{max-width:980px;margin:0 auto;padding:18px}
+@media (min-width:900px){.container{padding:24px}}
+
+.topbar{
+  position:sticky; top:0;
+  background: rgba(11,15,23,.82);
+  backdrop-filter: blur(10px);
+  border-bottom:1px solid var(--border);
+  z-index:10;
+}
+.topbar__inner{display:flex; align-items:center; justify-content:space-between; gap:12px}
+
+.brand{display:flex; align-items:center; gap:12px}
+.brand__logo{
+  width:36px;height:36px;border-radius:12px;
+  background: linear-gradient(135deg, var(--blue), #8b5cf6);
+  color:#0b0f17;
+  display:grid; place-items:center;
+  font-weight:800;
+}
+.brand__title{margin:0;font-size:18px}
+.brand__subtitle{margin:2px 0 0;color:var(--muted);font-size:12px}
+
+.actions{display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end}
+
+.btn{
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:10px 12px;
+  font-size:13px;
+  cursor:pointer;
+  background: rgba(255,255,255,.04);
+  color: var(--text);
+}
+.btn:hover{background: rgba(255,255,255,.06)}
+.btn:active{transform:translateY(1px)}
+
+.btn--soft{
+  background: rgba(255,255,255,.04);
+}
+.btn--danger{
+  background: rgba(239,68,68,.14);
+  border-color: rgba(239,68,68,.35);
+  color: #fecaca;
+}
+.btn--danger:hover{background: rgba(239,68,68,.20)}
+
+.card{
+  background: linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.015));
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:14px;
+  box-shadow:var(--shadow);
+}
+
+.hero{
+  display:grid;
+  grid-template-columns: 1.2fr .8fr;
+  gap:14px;
+  margin-top:14px;
+}
+@media (max-width:900px){.hero{grid-template-columns:1fr}}
+
+.hero__title{margin:0 0 8px;font-size:16px}
+.steps{margin:8px 0 0 18px; color: var(--text); padding:0}
+.steps li{margin:8px 0; line-height:1.5; color: rgba(229,231,235,.92)}
+
+code{
+  background: rgba(15,23,42,.55);
+  border: 1px solid rgba(148,163,184,.18);
+  border-radius:6px;
+  padding:1px 6px;
+  color: #c7d2fe;
+}
+
+.pills{display:flex; gap:8px; flex-wrap:wrap; margin-top:12px}
+.pill{
+  display:inline-block;
+  font-size:12px;
+  padding:6px 10px;
+  border-radius:999px;
+  background: var(--blueSoft);
+  border: 1px solid rgba(59,130,246,.22);
+  color:#bfdbfe;
+}
+
+.stat{
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:10px;
+  background: rgba(255,255,255,.02);
+}
+.stat + .stat{margin-top:10px}
+.stat__label{font-size:12px; color:var(--muted); margin-bottom:6px}
+.stat__box{font-size:13px; line-height:1.5; color: rgba(229,231,235,.92)}
+.stat--hint{
+  background: rgba(255,255,255,.015);
+}
+
+.grid{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap:12px;
+  margin-top:12px;
+}
+@media (max-width:900px){.grid{grid-template-columns:1fr}}
+
+.card__head{margin-bottom:8px}
+.card__title{margin:0;font-size:16px}
+.card__sub{margin:4px 0 0;color:var(--muted);font-size:12px}
+
+.muted{color:var(--muted); font-size:12px}
+
+/* Details accordion */
+.details{
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:10px;
+  margin-top:10px;
+  background: rgba(255,255,255,.02);
+}
+.details summary{
+  cursor:pointer;
+  font-weight:600;
+  font-size:13px;
+  color: rgba(229,231,235,.95);
+}
+.details__body{
+  margin-top:8px;
+  color: rgba(229,231,235,.88);
+  font-size:12px;
+  line-height:1.55;
+}
+.bullets{margin:8px 0 0 18px; padding:0}
+.bullets li{margin:6px 0; color: rgba(229,231,235,.88)}
+
+/* Small note block */
+.note{
+  margin-top:10px;
+  font-size:11px;
+  color: rgba(229,231,235,.72);
+  padding:10px;
+  border-radius:12px;
+  background: rgba(255,255,255,.02);
+  border: 1px dashed rgba(148,163,184,.25);
+}
+
+.footer{padding:16px 0}

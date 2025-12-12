@@ -16,7 +16,7 @@ let lastPayload = null;
 
 function loadSettings() {
   try {
-    if (!chrome || !chrome.storage || !chrome.storage.sync) {
+    if (!chrome.storage.sync) {
       console.warn('HaggleOS: chrome.storage.sync not available');
       return;
     }
@@ -47,7 +47,7 @@ function loadSettings() {
 
 function saveSettings(newSettings, callback) {
   try {
-    if (!chrome || !chrome.storage || !chrome.storage.sync) {
+    if (!chrome.storage.sync) {
       console.warn('HaggleOS: chrome.storage.sync not available for save');
       return;
     }
@@ -365,7 +365,7 @@ function attachPanelCloseButton(panel) {
 // Save one entry into history (max 5 items)
 function addHistoryEntry(result, payload) {
   try {
-    if (!chrome || !chrome.storage || !chrome.storage.sync) {
+    if (!chrome.storage.sync) {
       console.warn('HaggleOS: chrome.storage.sync not available for history');
       return;
     }
@@ -380,6 +380,7 @@ function addHistoryEntry(result, payload) {
     decision: result?.decision || 'UNKNOWN',
     market_price: result?.market_price ?? null,
     suggested_offer: result?.suggested_offer ?? null,
+    listing_url: payload?.listing_url || null,
     timestamp: Date.now(),
   };
 
@@ -396,7 +397,7 @@ function addHistoryEntry(result, payload) {
 // Render history view in the main panel
 function renderHistory(panel) {
   try {
-    if (!chrome || !chrome.storage || !chrome.storage.sync) {
+    if  (!chrome.storage.sync){
       console.warn('HaggleOS: chrome.storage.sync not available for history load');
       return;
     }
@@ -1030,6 +1031,8 @@ function initHaggleOS() {
         delivery_estimated_to,
         delivery_postcode,
         delivery_text,
+
+        listing_url: location.href,
 
         // returns
         returns_text,

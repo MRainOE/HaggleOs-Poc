@@ -3,12 +3,16 @@
   "name": "HaggleOS Deal Analyzer",
   "version": "1.0.0",
   "description": "Helps analyze eBay deals using our AI backend.",
-  "permissions": ["activeTab", "scripting", "storage"],
+  "permissions": ["activeTab", "storage", "tabs"],
+  "action": {
+    "default_title": "HaggleOS Dashboard"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
-      "matches": [
-        "*://*.ebay.com/*",
-        "*://*.ebay.co.uk/*"],
+      "matches": ["*://*.ebay.com/*", "*://*.ebay.co.uk/*"],
       "js": ["content.js"],
       "run_at": "document_idle"
     }
