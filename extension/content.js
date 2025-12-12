@@ -274,6 +274,38 @@ function startLoadingAnimation(panel) {
   panel.dataset.dotsIntervalId = String(intervalId);
 }
 
+// ---- HELPERS (local) ----
+const parseMoney = (text) => {
+  if (!text || typeof text !== 'string') return { currency: null, value: null, raw: null };
+  const raw = text.trim();
+
+  // Detect currency
+  let currency = null;
+  // Common eBay formats: "£12.34", "$12.34", "US $16.48", "EUR 9.99"
+  if (/US\s*\$/.test(raw) || raw.includes('$')) currency = 'USD';
+  if (raw.includes('£')) currency = 'GBP';
+  if (raw.includes('€')) currency = 'EUR';
+  if (/\bGBP\b/i.test(raw)) currency = 'GBP';
+  if (/\bUSD\b/i.test(raw)) currency = 'USD';
+  if (/\bEUR\b/i.test(raw)) currency = 'EUR';
+
+  // Extract number (first number-looking token)
+  let value = null;
+  const m = raw.match(/[\d.,]+/);
+  if (m) {
+    const num = m[0].replace(/,/g, '');
+    const parsed = parseFloat(num);
+    if (!Number.isNaN(parsed)) value = parsed;
+  }
+
+  return { currency, value, raw };
+};
+
+const cleanText = (el) => (el && el.innerText ? el.innerText.trim() : null);
+
+const unique = (arr) => Array.from(new Set((arr || []).filter(Boolean)));
+
+
 function stopLoadingAnimation(panel) {
   const idStr = panel.dataset.dotsIntervalId;
   if (idStr) {
@@ -867,18 +899,149 @@ function initHaggleOS() {
 
     const source = 'ebay';
 
+    // --- CONDITION (value + description) ---
+    let condition = null;
+    let condition_description = null;
+
+    const conditionRoot =
+    document.querySelector('[data-testid="x-item-condition"]') ||
+    document.querySelector('.x-item-condition');
+
+    if (conditionRoot) {
+    // Value like "Open box", "New", "Used"
+    const conditionValueEl =
+      conditionRoot.querySelector('.x-item-condition-text [data-testid="ux-textual-display"] .ux-textspans') ||
+      conditionRoot.querySelector('.x-item-condition-text .clipped') ||
+      conditionRoot.querySelector('.x-item-condition-text .ux-textspans');
+
+    condition = cleanText(conditionValueEl);
+
+    // Description like “Like new comes in original packaging”
+    const condDescEl = conditionRoot.querySelector('.x-item-condition-desc');
+    condition_description = cleanText(condDescEl);
+    }
+
+    // --- SHIPPING FEES / METHOD / LOCATION ---
+    let shipping_fee_value = null;
+    let shipping_fee_currency = null;
+    let shipping_text = null;
+    let shipping_location = null;
+
+    const shippingRoot = document.querySelector('.ux-labels-values--shipping');
+    if (shippingRoot) {
+    const boldPriceEl = shippingRoot.querySelector('.ux-textspans--BOLD');
+    const money = parseMoney(cleanText(boldPriceEl) || '');
+    shipping_fee_value = money.value;
+    shipping_fee_currency = money.currency;
+
+    // Full text (often includes method + "See details")
+    shipping_text = cleanText(shippingRoot.querySelector('.ux-labels-values__values-content'));
+
+    // "Located in: ..."
+    const locatedEl = shippingRoot.querySelector('.ux-textspans--SECONDARY');
+    shipping_location = cleanText(locatedEl);
+    }
+
+    // --- IMPORT FEES (usually text only) ---
+    let import_fees_text = null;
+    const importRoot = document.querySelector('.ux-labels-values--importCharges');
+    if (importRoot) {
+    import_fees_text = cleanText(importRoot.querySelector('.ux-labels-values__values-content'));
+    }
+
+    // --- DELIVERY (estimated between dates + postcode) ---
+    let delivery_estimated_from = null;
+    let delivery_estimated_to = null;
+    let delivery_postcode = null;
+    let delivery_text = null;
+
+    const deliveryRoot = document.querySelector('.ux-labels-values--deliverto');
+    if (deliveryRoot) {
+    delivery_text = cleanText(deliveryRoot.querySelector('.ux-labels-values__values-content'));
+
+    const bolds = Array.from(deliveryRoot.querySelectorAll('.ux-textspans--BOLD'))
+      .map((b) => cleanText(b))
+      .filter(Boolean);
+
+    // Typically first two bolds are the date range
+    if (bolds.length >= 1) delivery_estimated_from = bolds[0];
+    if (bolds.length >= 2) delivery_estimated_to = bolds[1];
+
+    // Postcode often appears as a plain span after "to"
+    const spans = Array.from(deliveryRoot.querySelectorAll('.ux-textspans'))
+      .map((s) => cleanText(s))
+      .filter(Boolean);
+
+    // Try to find something that looks like a postcode/zip (simple heuristic)
+    // Example in your DOM: "CV11AH"
+    const possible = spans.find((t) => /^[A-Z0-9 ]{3,10}$/i.test(t) && !/^(to|and|estimated|between)$/i.test(t));
+    if (possible) delivery_postcode = possible;
+    }
+
+    // --- RETURNS ---
+    let returns_text = null;
+    const returnsRoot = document.querySelector('.ux-labels-values--returns');
+    if (returnsRoot) {
+    returns_text = cleanText(returnsRoot.querySelector('.ux-labels-values__values-content'));
+    }
+
+    // --- ALL IMAGE URLS (grid thumbnails -> convert to larger) ---
+    let imageUrls = [];
+    const grid = document.querySelector('[data-testid="grid-container"].ux-image-grid') || document.querySelector('.ux-image-grid');
+
+    if (grid) {
+    const imgs = Array.from(grid.querySelectorAll('img'));
+    imageUrls = unique(
+      imgs.map((img) => img.getAttribute('src') || img.getAttribute('data-src')).map((u) => {
+        if (!u) return null;
+        // upgrade thumbnail sizes like s-l140 -> s-l1600 (works on many eBay images)
+        return u.replace(/s-l\d+/i, 's-l1600');
+      })
+    );
+    }
+
+    // If we found a grid, prefer first image as main
+    if (imageUrls.length > 0) {
+    imageUrl = imageUrls[0];
+    }
+
     const payload = {
-      title,
-      price_value,
-      currency,
-      imageUrl,
-      source,
-      settings: {
-        max_overpay_percent: currentSettings.max_overpay_percent,
-        negotiation_style: currentSettings.negotiation_style,
-        timeout_seconds: currentSettings.timeout_seconds,
-      },
-    };
+        title,
+        price_value,
+        currency,
+
+        // images
+        imageUrl,      // main
+        imageUrls,     // all
+
+        // item condition
+        condition,
+        condition_description,
+
+        // shipping / fees
+        shipping_fee_value,
+        shipping_fee_currency,
+        shipping_text,
+        shipping_location,
+        import_fees_text,
+
+        // delivery
+        delivery_estimated_from,
+        delivery_estimated_to,
+        delivery_postcode,
+        delivery_text,
+
+        // returns
+        returns_text,
+
+        source,
+        settings: {
+          max_overpay_percent: currentSettings.max_overpay_percent,
+          negotiation_style: currentSettings.negotiation_style,
+          timeout_seconds: currentSettings.timeout_seconds,
+        },
+      };
+
 
     console.log('HaggleOS payload (before sending):', payload);
 
