@@ -15,6 +15,15 @@
       "matches": ["*://*.ebay.com/*", "*://*.ebay.co.uk/*"],
       "js": ["content.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "http://localhost:3000/dashboard*",
+        "http://127.0.0.1:3000/dashboard*",
+        "https://haggle-os-poc.vercel.app/dashboard*"
+      ],
+      "js": ["dashboard_bridge.js"],
+      "run_at": "document_start"
     }
   ]
 }

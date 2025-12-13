@@ -381,6 +381,7 @@ function addHistoryEntry(result, payload) {
     market_price: result?.market_price ?? null,
     suggested_offer: result?.suggested_offer ?? null,
     listing_url: payload?.listing_url || null,
+    negotiation_draft: result?.draft_message || null,
     timestamp: Date.now(),
   };
 
@@ -474,15 +475,27 @@ function renderHistory(panel) {
           offerPart = ` – suggested ${fmt(item.currency, item.suggested_offer)}`;
         }
 
+        let draftPart = '';
+        if (item.negotiation_draft && typeof item.negotiation_draft === 'string') {
+          draftPart = `
+            <div style="margin-top:4px; padding:6px; border-radius:6px; background:#f0fdf4; font-size:11px; color:#14532d;">
+              <strong>Draft:</strong> ${item.negotiation_draft}
+            </div>
+          `;
+        }
+
         return `
           <div style="margin-bottom:6px; font-size:12px;">
             <strong>[${dec}]</strong> ${title}<br>
             <span style="color:#555;">
               ${listing} vs ${market}${extra}${offerPart}
             </span>
+            ${draftPart}
           </div>
         `;
-      })
+        }
+      
+      )
       .join('');
 
     panel.innerHTML = `
