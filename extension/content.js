@@ -1065,33 +1065,80 @@ function initHaggleOS() {
 
 
     console.log('HaggleOS payload (before sending):', payload);
-
     const API_URL = 'https://haggle-os-poc.vercel.app/api/analyse'; 
 
     try {
-      const response = await fetch(API_URL, {
+      // STEP 1: Start the Analysis
+      const startResponse = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
-      if (!response.ok) {
-        console.error('HaggleOS: API error status', response.status);
-        showError(panel, `API error (status ${response.status}).`);
-      } else {
-        const result = await response.json();
-        console.log('HaggleOS result from API:', result);
-
-        // store last result in memory for "Back to result" in history view
-        lastResult = result;
-        lastPayload = payload;
-
-        renderResult(panel, result, payload);
-        addHistoryEntry(result, payload);
+      if (!startResponse.ok) {
+        throw new Error(`Start failed: ${startResponse.status}`);
       }
+
+      const startData = await startResponse.json();
+      const executionId = startData.executionId;
+
+      if (!executionId) {
+        throw new Error('No execution ID returned from backend.');
+      }
+      
+      console.log('HaggleOS: Job started. ID:', executionId);
+
+      // STEP 2: Poll for Results
+      let isComplete = false;
+      let attempts = 0;
+      const MAX_ATTEMPTS = 60; // 60 * 5s = 5 minutes max wait
+      let result = null;
+
+      while (!isComplete && attempts < MAX_ATTEMPTS) {
+        attempts++;
+        
+        // Wait 5 seconds before checking
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        
+        // Update button text to show we are still alive
+        const dots = '.'.repeat((attempts % 3) + 1);
+        button.innerText = `Analyzing${dots}`;
+
+        // Check Status
+        const checkResponse = await fetch(API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            action: 'check_status', 
+            executionId: executionId 
+          }),
+        });
+        
+        const checkData = await checkResponse.json();
+        
+        if (checkData.complete) {
+          isComplete = true;
+          result = checkData;
+        } else {
+          console.log(`HaggleOS: Still running... (${checkData.state})`);
+        }
+      }
+
+      if (!result) {
+        throw new Error('Timed out waiting for analysis results.');
+      }
+
+      console.log('HaggleOS result from API:', result);
+
+      // Store results and Render
+      lastResult = result;
+      lastPayload = payload;
+      renderResult(panel, result, payload);
+      addHistoryEntry(result, payload);
+
     } catch (err) {
       console.error('HaggleOS: Failed to call API', err);
-      showError(panel, 'Failed to reach backend. Please try again.');
+      showError(panel, 'Analysis failed or timed out. Please try again.');
     } finally {
       // Re-enable button
       isAnalyzing = false;
