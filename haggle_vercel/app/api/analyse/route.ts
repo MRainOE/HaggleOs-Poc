@@ -62,8 +62,15 @@ async function startKestra(webhookUrl: string, inputs: any) {
   }
 }
 
-// ⚠️ ENHANCED: Better debugging for Kestra response structures
-async function getExecutionStatus(executionId: string, baseUrl: string, apiToken?: string, tenant?: string) {
+// ✅ UPDATED: Support both Bearer Token and Basic Auth
+async function getExecutionStatus(
+  executionId: string, 
+  baseUrl: string, 
+  apiToken?: string, 
+  tenant?: string,
+  username?: string,
+  password?: string
+) {
   const cleanBase = baseUrl.replace(/\/$/, "");
   const tenantSegment = buildTenantSegment(tenant);
   const url = `${cleanBase}/api/v1${tenantSegment}/executions/${executionId}`;
@@ -71,7 +78,20 @@ async function getExecutionStatus(executionId: string, baseUrl: string, apiToken
   console.log('🔍 DEBUG: Fetching status from URL:', url);
 
   const headers: Record<string, string> = {};
-  if (apiToken) headers["Authorization"] = `Bearer ${apiToken}`;
+  
+  // ✅ Check authentication method
+  if (username && password) {
+    // Basic Authentication
+    const credentials = Buffer.from(`${username}:${password}`).toString('base64');
+    headers["Authorization"] = `Basic ${credentials}`;
+    console.log('🔑 Using Basic Auth (username/password)');
+  } else if (apiToken) {
+    // Bearer Token Authentication
+    headers["Authorization"] = `Bearer ${apiToken}`;
+    console.log('🔑 Using Bearer Token');
+  } else {
+    console.warn('⚠️ No authentication credentials provided');
+  }
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 5000);
@@ -85,10 +105,13 @@ async function getExecutionStatus(executionId: string, baseUrl: string, apiToken
       console.log(`❌ Kestra API returned ${res.status} for execution ${executionId}`);
       const errorText = await res.text();
       console.log('❌ Error response body:', errorText);
+      
+      // Return error state but don't crash
       return { 
-        state: { current: "UNKNOWN" },
+        state: { current: "ERROR" },
         outputs: {},
-        _debug_error: `HTTP ${res.status}: ${errorText}`
+        _debug_error: `HTTP ${res.status}: ${errorText}`,
+        _debug_auth_used: username ? 'Basic' : apiToken ? 'Bearer' : 'None'
       };
     }
     
@@ -121,7 +144,7 @@ async function getExecutionStatus(executionId: string, baseUrl: string, apiToken
       stack: err.stack
     });
     return { 
-      state: { current: "UNKNOWN" },
+      state: { current: "ERROR" },
       outputs: {},
       _debug_error: err.message
     };
@@ -139,6 +162,8 @@ export async function POST(request: Request) {
   const KESTRA_WEBHOOK_URL = process.env.KESTRA_WEBHOOK_URL;
   const KESTRA_BASE_URL = process.env.KESTRA_BASE_URL;
   const KESTRA_API_TOKEN = process.env.KESTRA_API_TOKEN || "";
+  const KESTRA_USERNAME = process.env.KESTRA_USERNAME || "";
+  const KESTRA_PASSWORD = process.env.KESTRA_PASSWORD || "";
   const KESTRA_TENANT =
     process.env.KESTRA_TENANT || extractTenantFromWebhook(KESTRA_WEBHOOK_URL) || undefined;
 
@@ -146,6 +171,8 @@ export async function POST(request: Request) {
     hasWebhookUrl: !!KESTRA_WEBHOOK_URL,
     hasBaseUrl: !!KESTRA_BASE_URL,
     hasApiToken: !!KESTRA_API_TOKEN,
+    hasUsername: !!KESTRA_USERNAME,
+    hasPassword: !!KESTRA_PASSWORD,
     tenant: KESTRA_TENANT,
     baseUrl: KESTRA_BASE_URL
   });
@@ -168,10 +195,26 @@ export async function POST(request: Request) {
         body.executionId,
         KESTRA_BASE_URL,
         KESTRA_API_TOKEN,
-        KESTRA_TENANT
+        KESTRA_TENANT,
+        KESTRA_USERNAME,  // ✅ Added
+        KESTRA_PASSWORD   // ✅ Added
       );
       
-      // ✅ ENHANCED: Handle BOTH possible structures + more logging
+      // ✅ Handle authentication errors
+      if (data._debug_error && data._debug_error.includes('401')) {
+        console.error('❌ AUTHENTICATION FAILED - Check your credentials!');
+        return NextResponse.json(
+          { 
+            complete: false, 
+            state: "AUTH_ERROR",
+            error: "Authentication failed. Check KESTRA_USERNAME/PASSWORD or KESTRA_API_TOKEN.",
+            _debug: data._debug_error
+          },
+          { status: 401, headers: CORS_HEADERS }
+        );
+      }
+      
+      // ✅ Handle BOTH possible structures
       let current: string | undefined;
       
       console.log('🔍 Parsing state from response...');
@@ -294,7 +337,7 @@ export async function POST(request: Request) {
 
   try {
     const started = await startKestra(KESTRA_WEBHOOK_URL, kestraInputs);
-    console.log('📥 Kestra start response:', started);
+    console.log('🔥 Kestra start response:', started);
     
     const executionId = started?.id || started?.executionId || started?.execution?.id;
 
