@@ -1066,28 +1066,86 @@ function initHaggleOS() {
 
     console.log('HaggleOS payload (before sending):', payload);
 
-    const API_URL = 'https://haggle-os-poc.vercel.app/api/analyse'; 
+    const API_BASE = 'https://haggle-os-poc.vercel.app/api/analyse';
+    const timeoutMs = Math.max(
+      10 * 60 * 1000,
+      (typeof currentSettings.timeout_seconds === 'number'
+        ? currentSettings.timeout_seconds * 1000
+        : 0)
+    );
 
     try {
-      const response = await fetch(API_URL, {
+      const startResponse = await fetch(API_BASE, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
 
-      if (!response.ok) {
-        console.error('HaggleOS: API error status', response.status);
-        showError(panel, `API error (status ${response.status}).`);
-      } else {
-        const result = await response.json();
-        console.log('HaggleOS result from API:', result);
+      if (!startResponse.ok) {
+        console.error('HaggleOS: API error status', startResponse.status);
+        showError(panel, `API error (status ${startResponse.status}).`);
+        return;
+      }
 
-        // store last result in memory for "Back to result" in history view
-        lastResult = result;
+      const startJson = await startResponse.json().catch(() => null);
+      const executionId =
+        startJson?.executionId || startJson?.id || startJson?.execution?.id;
+
+      if (!executionId) {
+        console.error('HaggleOS: Missing executionId in start response', startJson);
+        showError(panel, 'Failed to start analysis (no execution id).');
+        return;
+      }
+
+      const pollUrl = `${API_BASE}/status?executionId=${encodeURIComponent(executionId)}`;
+      const pollIntervalMs = 1500;
+      const startedAt = Date.now();
+
+      while (true) {
+        if (Date.now() - startedAt > timeoutMs) {
+          showError(panel, 'Timed out waiting for analysis (10 minutes).');
+          return;
+        }
+
+        let statusResponse;
+        try {
+          statusResponse = await fetch(pollUrl);
+        } catch (err) {
+          console.error('HaggleOS: Failed to poll status', err);
+          showError(panel, 'Failed to reach backend. Please try again.');
+          return;
+        }
+
+        if (!statusResponse.ok) {
+          console.error('HaggleOS: Status API error', statusResponse.status);
+          showError(panel, `API error (status ${statusResponse.status}).`);
+          return;
+        }
+
+        const statusJson = await statusResponse.json().catch(() => null);
+        if (!statusJson) {
+          console.error('HaggleOS: Invalid status response');
+          showError(panel, 'Invalid response from backend.');
+          return;
+        }
+
+        const state =
+          statusJson.state ||
+          statusJson._kestra?.state ||
+          statusJson?.state?.current ||
+          'UNKNOWN';
+
+        if (statusJson.ok === true && (state === 'RUNNING' || state === 'CREATED')) {
+          await new Promise((r) => setTimeout(r, pollIntervalMs));
+          continue;
+        }
+
+        // Treat any other state as finished and render result
+        lastResult = statusJson;
         lastPayload = payload;
-
-        renderResult(panel, result, payload);
-        addHistoryEntry(result, payload);
+        renderResult(panel, statusJson, payload);
+        addHistoryEntry(statusJson, payload);
+        return;
       }
     } catch (err) {
       console.error('HaggleOS: Failed to call API', err);
