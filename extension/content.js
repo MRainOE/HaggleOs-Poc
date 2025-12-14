@@ -1066,7 +1066,7 @@ function initHaggleOS() {
 
     console.log('HaggleOS payload (before sending):', payload);
 
-    const API_URL = 'https://haggle-os-poc.vercel.app/api/analyse'; // make sure this matches your backend
+    const API_URL = 'https://haggle-os-poc.vercel.app/api/analyse'; 
 
     try {
       const response = await fetch(API_URL, {
