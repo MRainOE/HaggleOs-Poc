@@ -2,6 +2,8 @@
 
 This project contains the **Kestra orchestration logic** for an AI-powered eBay negotiation assistant. It uses a multi-agent system to analyze market prices, visually inspect item conditions, and generate strategic negotiation messages.
 
+**🌐 Live Deployment:** Our Kestra instance is deployed on Google Cloud for 7 days to support the hackathon demonstration and live testing.
+
 ## 🧠 System Architecture
 
 The workflow is split into three distinct "Agents" managed by a single Kestra Flow:
@@ -57,7 +59,9 @@ Since these agents require specific Python libraries (`google-generativeai`, `se
 
 ## **Run with Docker Compose**
 
-Ensure your `docker-compose.yml` is configured to read the `.env` file. Example:
+**For Hackathon:** Our Kestra instance is deployed on a Google Cloud VM for 7 days, accessible for live demonstration and testing.
+
+For local development, ensure your `docker-compose.yml` is configured to read the `.env` file. Example:
 
 ```yaml
 version: "3"
@@ -96,10 +100,10 @@ Alternatively, you can import the flow directly from the repository file:
 Note: The included flow in `kestra_agents/negotiator_flow.yml` defines a webhook trigger. After importing, you can trigger the flow via the webhook endpoint:
 
 ```
-POST http://localhost:8080/api/v1/executions/webhook/com.haggleos/haggle-decision-engine/haggle-key
+POST http://localhost:8080/api/v1/executions/webhook/com.haggleos/haggle-decision-engine/[YOUR_TRIGGER_KEY]
 ```
 
-This webhook URL is built from the `namespace` (`com.haggleos`), the flow `id` (`haggle-decision-engine`), and the trigger `key` defined in `negotiator_flow.yml`.
+This webhook URL is built from the `namespace` (`com.haggleos`), the flow `id` (`haggle-decision-engine`), and the trigger `key` you configure in `negotiator_flow.yml`.
 
 ## **API Usage (Chrome Extension Integration)**
 
