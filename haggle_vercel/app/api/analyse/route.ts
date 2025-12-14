@@ -67,13 +67,14 @@ async function getExecutionStatus(executionId: string, baseUrl: string, apiToken
   try {
     const res = await fetch(url, { headers, signal: controller.signal });
     if (!res.ok) {
-       // If 404, it might still be initializing, so we treat as RUNNING/UNKNOWN
-       return { state: "UNKNOWN", outputs: {} };
+       // FIX: Return matching structure with state.current
+       return { state: { current: "UNKNOWN" }, outputs: {} };
     }
     return await res.json();
   } catch (err) {
     console.error("Status check failed:", err);
-    throw err;
+    // FIX: Also handle exceptions with correct structure
+    return { state: { current: "UNKNOWN" }, outputs: {} };
   } finally {
     clearTimeout(timeoutId);
   }
@@ -104,34 +105,43 @@ export async function POST(request: Request) {
       const data = await getExecutionStatus(body.executionId, KESTRA_BASE_URL, KESTRA_API_TOKEN);
       const current = data?.state?.current;
 
-      if (current === "RUNNING" || current === "CREATED" || current === "QUEUED" || current === "UNKNOWN") {
+      // FIX: Add explicit check for undefined/null
+      if (!current || current === "RUNNING" || current === "CREATED" || current === "QUEUED" || current === "UNKNOWN") {
         return NextResponse.json(
-          { complete: false, state: current },
+          { complete: false, state: current || "UNKNOWN" },
           { headers: CORS_HEADERS }
         );
       }
 
-      // If finished (SUCCESS, FAILED, WARNING), parse results
-      const outputs = data?.outputs || {};
-      
-      // Parse messages (Agent C logic)
-      const draftMessages = Array.isArray(outputs?.draft_messages) ? outputs.draft_messages : [];
-      const draftMessage =
-        draftMessages.find((m: any) => m?.style === "Polite")?.message ||
-        draftMessages[0]?.message ||
-        "";
+      // Only parse results if we have a definitive completion state
+      if (current === "SUCCESS" || current === "FAILED" || current === "WARNING") {
+        const outputs = data?.outputs || {};
+        
+        // Parse messages (Agent C logic)
+        const draftMessages = Array.isArray(outputs?.draft_messages) ? outputs.draft_messages : [];
+        const draftMessage =
+          draftMessages.find((m: any) => m?.style === "Polite")?.message ||
+          draftMessages[0]?.message ||
+          "";
 
-      return NextResponse.json({
-        complete: true,
-        state: current,
-        // The frontend expects these exact fields:
-        decision: outputs?.decision ?? "ABORT",
-        market_price: outputs?.market_price ?? 0,
-        suggested_offer: outputs?.suggested_offer ?? 0,
-        defects_found: outputs?.defects_found ?? [],
-        draft_messages: draftMessages,
-        draft_message: draftMessage,
-      }, { headers: CORS_HEADERS });
+        return NextResponse.json({
+          complete: true,
+          state: current,
+          // The frontend expects these exact fields:
+          decision: outputs?.decision ?? "ABORT",
+          market_price: outputs?.market_price ?? 0,
+          suggested_offer: outputs?.suggested_offer ?? 0,
+          defects_found: outputs?.defects_found ?? [],
+          draft_messages: draftMessages,
+          draft_message: draftMessage,
+        }, { headers: CORS_HEADERS });
+      }
+
+      // Fallback for any other unexpected state
+      return NextResponse.json(
+        { complete: false, state: current },
+        { headers: CORS_HEADERS }
+      );
 
     } catch (err: any) {
       return NextResponse.json(
