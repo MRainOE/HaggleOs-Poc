@@ -25,6 +25,18 @@ function normalizeImageUrls(body: any): string[] {
   return [];
 }
 
+function extractTenantFromWebhook(webhookUrl?: string | null): string | null {
+  if (!webhookUrl) return null;
+  const match = webhookUrl.match(/\/api\/v\d+\/([^/]+)\/executions\/webhook/i);
+  return match?.[1] || null;
+}
+
+function buildTenantSegment(rawTenant?: string | null): string {
+  if (!rawTenant) return "";
+  const cleaned = rawTenant.replace(/^\/+|\/+$/g, "");
+  return cleaned ? `/${cleaned}` : "";
+}
+
 async function startKestra(webhookUrl: string, inputs: any) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10000);
@@ -50,10 +62,13 @@ async function startKestra(webhookUrl: string, inputs: any) {
   }
 }
 
-// ⚠️ CRITICAL: Handle both possible Kestra response structures
-async function getExecutionStatus(executionId: string, baseUrl: string, apiToken?: string) {
+// ⚠️ ENHANCED: Better debugging for Kestra response structures
+async function getExecutionStatus(executionId: string, baseUrl: string, apiToken?: string, tenant?: string) {
   const cleanBase = baseUrl.replace(/\/$/, "");
-  const url = `${cleanBase}/api/v1/executions/${executionId}`;
+  const tenantSegment = buildTenantSegment(tenant);
+  const url = `${cleanBase}/api/v1${tenantSegment}/executions/${executionId}`;
+
+  console.log('🔍 DEBUG: Fetching status from URL:', url);
 
   const headers: Record<string, string> = {};
   if (apiToken) headers["Authorization"] = `Bearer ${apiToken}`;
@@ -64,33 +79,51 @@ async function getExecutionStatus(executionId: string, baseUrl: string, apiToken
   try {
     const res = await fetch(url, { headers, signal: controller.signal });
     
+    console.log('🔍 DEBUG: HTTP Status:', res.status);
+    
     if (!res.ok) {
-      console.log(`Kestra API returned ${res.status} for execution ${executionId}`);
+      console.log(`❌ Kestra API returned ${res.status} for execution ${executionId}`);
+      const errorText = await res.text();
+      console.log('❌ Error response body:', errorText);
       return { 
         state: { current: "UNKNOWN" },
-        outputs: {} 
+        outputs: {},
+        _debug_error: `HTTP ${res.status}: ${errorText}`
       };
     }
     
     const data = await res.json();
     
-    // 🔍 DEBUG: Log the actual structure we received
-    console.log('Kestra API Response Structure:', JSON.stringify({
+    // 🔍 COMPREHENSIVE DEBUG LOGGING
+    console.log('='.repeat(80));
+    console.log('🔍 FULL KESTRA API RESPONSE:');
+    console.log(JSON.stringify(data, null, 2));
+    console.log('='.repeat(80));
+    
+    console.log('🔍 STRUCTURE ANALYSIS:', {
       hasState: !!data.state,
       stateType: typeof data.state,
       stateValue: data.state,
       hasStateCurrent: !!data?.state?.current,
       stateCurrentValue: data?.state?.current,
-      keys: Object.keys(data)
-    }, null, 2));
+      topLevelKeys: Object.keys(data),
+      hasOutputs: !!data.outputs,
+      outputsKeys: data.outputs ? Object.keys(data.outputs) : []
+    });
     
     return data;
     
-  } catch (err) {
-    console.error("Status check failed:", err);
+  } catch (err: any) {
+    console.error("❌ Status check failed:", err);
+    console.error("❌ Error details:", {
+      name: err.name,
+      message: err.message,
+      stack: err.stack
+    });
     return { 
       state: { current: "UNKNOWN" },
-      outputs: {} 
+      outputs: {},
+      _debug_error: err.message
     };
   } finally {
     clearTimeout(timeoutId);
@@ -101,11 +134,21 @@ async function getExecutionStatus(executionId: string, baseUrl: string, apiToken
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
-  console.log("API received:", body?.action || "New Analysis", body?.title || body?.executionId);
+  console.log("📥 API received:", body?.action || "New Analysis", body?.title || body?.executionId);
 
   const KESTRA_WEBHOOK_URL = process.env.KESTRA_WEBHOOK_URL;
   const KESTRA_BASE_URL = process.env.KESTRA_BASE_URL;
   const KESTRA_API_TOKEN = process.env.KESTRA_API_TOKEN || "";
+  const KESTRA_TENANT =
+    process.env.KESTRA_TENANT || extractTenantFromWebhook(KESTRA_WEBHOOK_URL) || undefined;
+
+  console.log('🔧 Environment config:', {
+    hasWebhookUrl: !!KESTRA_WEBHOOK_URL,
+    hasBaseUrl: !!KESTRA_BASE_URL,
+    hasApiToken: !!KESTRA_API_TOKEN,
+    tenant: KESTRA_TENANT,
+    baseUrl: KESTRA_BASE_URL
+  });
 
   if (!KESTRA_WEBHOOK_URL || !KESTRA_BASE_URL) {
     return NextResponse.json(
@@ -118,36 +161,55 @@ export async function POST(request: Request) {
   // CHECK STATUS (Polling Request)
   // ==========================================
   if (body.action === "check_status" && body.executionId) {
+    console.log('🔄 STATUS CHECK for execution:', body.executionId);
+    
     try {
-      const data = await getExecutionStatus(body.executionId, KESTRA_BASE_URL, KESTRA_API_TOKEN);
+      const data = await getExecutionStatus(
+        body.executionId,
+        KESTRA_BASE_URL,
+        KESTRA_API_TOKEN,
+        KESTRA_TENANT
+      );
       
-      // ✅ FIX: Handle BOTH possible structures
-      // Structure 1: { state: { current: "SUCCESS" } }  ← nested
-      // Structure 2: { state: "SUCCESS" }                ← flat
-      
+      // ✅ ENHANCED: Handle BOTH possible structures + more logging
       let current: string | undefined;
       
+      console.log('🔍 Parsing state from response...');
+      
       if (typeof data?.state === 'string') {
-        // Flat structure
+        // Flat structure: { state: "SUCCESS" }
         current = data.state;
-        console.log(`Kestra state (flat): ${current}`);
+        console.log(`✅ Found FLAT state structure: ${current}`);
       } else if (typeof data?.state?.current === 'string') {
-        // Nested structure
+        // Nested structure: { state: { current: "SUCCESS" } }
         current = data.state.current;
-        console.log(`Kestra state (nested): ${current}`);
+        console.log(`✅ Found NESTED state structure: ${current}`);
       } else {
-        console.warn('Unknown state structure:', data?.state);
+        console.warn('⚠️ Unknown state structure:', {
+          stateType: typeof data?.state,
+          stateValue: data?.state,
+          fullData: data
+        });
         current = "UNKNOWN";
       }
 
-      console.log(`Status check for ${body.executionId}: ${current}`);
+      console.log(`📊 Final parsed state for ${body.executionId}: ${current}`);
 
       // Define state categories
       const runningStates = ["RUNNING", "CREATED", "QUEUED", "UNKNOWN", "PAUSED"];
       const completeStates = ["SUCCESS", "FAILED", "WARNING", "KILLED"];
       
+      console.log('🔍 State classification:', {
+        current,
+        isRunning: runningStates.includes(current || ''),
+        isComplete: completeStates.includes(current || ''),
+        runningStates,
+        completeStates
+      });
+      
       // Check if still running
       if (!current || runningStates.includes(current)) {
+        console.log(`⏳ Execution ${body.executionId} is still RUNNING (state: ${current || "UNKNOWN"})`);
         return NextResponse.json(
           { complete: false, state: current || "UNKNOWN" },
           { headers: CORS_HEADERS }
@@ -156,20 +218,21 @@ export async function POST(request: Request) {
 
       // Check if completed
       if (completeStates.includes(current)) {
-        console.log(`✅ Execution ${body.executionId} completed with state: ${current}`);
+        console.log(`✅ Execution ${body.executionId} COMPLETED with state: ${current}`);
         
         // Parse outputs
         const outputs = data?.outputs || {};
         
-        // 🔍 DEBUG: Log what outputs we got
-        console.log('Kestra outputs:', JSON.stringify({
+        console.log('📦 Processing outputs:', {
+          hasOutputs: !!data.outputs,
+          outputKeys: Object.keys(outputs),
           hasDecision: !!outputs.decision,
           decision: outputs.decision,
           hasMarketPrice: !!outputs.market_price,
           marketPrice: outputs.market_price,
           hasDraftMessages: !!outputs.draft_messages,
-          outputKeys: Object.keys(outputs)
-        }, null, 2));
+          fullOutputs: outputs
+        });
         
         const draftMessages = Array.isArray(outputs?.draft_messages) 
           ? outputs.draft_messages 
@@ -180,7 +243,7 @@ export async function POST(request: Request) {
           draftMessages[0]?.message ||
           "";
 
-        return NextResponse.json({
+        const response = {
           complete: true,
           state: current,
           decision: outputs?.decision ?? "ABORT",
@@ -189,7 +252,11 @@ export async function POST(request: Request) {
           defects_found: outputs?.defects_found ?? [],
           draft_messages: draftMessages,
           draft_message: draftMessage,
-        }, { headers: CORS_HEADERS });
+        };
+        
+        console.log('📤 Sending complete response:', response);
+
+        return NextResponse.json(response, { headers: CORS_HEADERS });
       }
 
       // Unknown state - treat as still running
@@ -200,7 +267,8 @@ export async function POST(request: Request) {
       );
 
     } catch (err: any) {
-      console.error("Unexpected error in status check:", err);
+      console.error("❌ Unexpected error in status check:", err);
+      console.error("❌ Error stack:", err.stack);
       return NextResponse.json(
         { complete: false, state: "ERROR", error: err?.message },
         { headers: CORS_HEADERS }
@@ -212,6 +280,8 @@ export async function POST(request: Request) {
   // START NEW ANALYSIS
   // ==========================================
   
+  console.log('🚀 Starting new analysis...');
+  
   const kestraInputs = {
     title: body?.title ?? "",
     price_value: toNumber(body?.price_value ?? body?.listing_price) ?? 0,
@@ -220,15 +290,20 @@ export async function POST(request: Request) {
     condition: body?.condition ?? "Used",
   };
 
+  console.log('📦 Kestra inputs:', kestraInputs);
+
   try {
     const started = await startKestra(KESTRA_WEBHOOK_URL, kestraInputs);
+    console.log('📥 Kestra start response:', started);
+    
     const executionId = started?.id || started?.executionId || started?.execution?.id;
 
     if (!executionId) {
+      console.error('❌ No execution ID found in response:', started);
       throw new Error("Kestra started but returned no Execution ID");
     }
 
-    console.log(`🚀 Started execution: ${executionId}`);
+    console.log(`✅ Started execution: ${executionId}`);
 
     return NextResponse.json(
       { ok: true, executionId: executionId },
@@ -236,7 +311,12 @@ export async function POST(request: Request) {
     );
 
   } catch (err: any) {
-    console.error("Kestra start error:", err);
+    console.error("❌ Kestra start error:", err);
+    console.error("❌ Error details:", {
+      name: err.name,
+      message: err.message,
+      stack: err.stack
+    });
     return NextResponse.json(
       { ok: false, error: err?.message || "Failed to start workflow" },
       { status: 500, headers: CORS_HEADERS }
