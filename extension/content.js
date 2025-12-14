@@ -1089,40 +1089,70 @@ function initHaggleOS() {
       console.log('HaggleOS: Job started. ID:', executionId);
 
       // STEP 2: Poll for Results
-      let isComplete = false;
-      let attempts = 0;
-      const MAX_ATTEMPTS = 60; // 60 * 5s = 5 minutes max wait
-      let result = null;
+let isComplete = false;
+let attempts = 0;
+const MAX_ATTEMPTS = 60; // 60 * 5s = 5 minutes max wait
+let result = null;
 
-      while (!isComplete && attempts < MAX_ATTEMPTS) {
-        attempts++;
-        
-        // Wait 5 seconds before checking
-        await new Promise(resolve => setTimeout(resolve, 5000));
-        
-        // Update button text to show we are still alive
-        const dots = '.'.repeat((attempts % 3) + 1);
-        button.innerText = `Analyzing${dots}`;
+while (!isComplete && attempts < MAX_ATTEMPTS) {
+  attempts++;
+  
+  // Wait 5 seconds before checking
+  await new Promise(resolve => setTimeout(resolve, 5000));
+  
+  // Update button text to show we are still alive
+  const dots = '.'.repeat((attempts % 3) + 1);
+  button.innerText = `Analyzing${dots} (${attempts * 5}s)`;
 
-        // Check Status
-        const checkResponse = await fetch(API_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            action: 'check_status', 
-            executionId: executionId 
-          }),
-        });
-        
-        const checkData = await checkResponse.json();
-        
-        if (checkData.complete) {
-          isComplete = true;
-          result = checkData;
-        } else {
-          console.log(`HaggleOS: Still running... (${checkData.state})`);
-        }
-      }
+  console.log(`HaggleOS: Polling attempt ${attempts}/${MAX_ATTEMPTS}`);
+
+  try {
+    // Check Status
+    const checkResponse = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        action: 'check_status', 
+        executionId: executionId 
+      }),
+    });
+    
+    if (!checkResponse.ok) {
+      console.warn(`HaggleOS: Status check returned ${checkResponse.status}, retrying...`);
+      continue;
+    }
+    
+    const checkData = await checkResponse.json();
+    
+    // 🔍 Enhanced logging
+    console.log(`HaggleOS: Response at attempt ${attempts}:`, {
+      complete: checkData.complete,
+      state: checkData.state,
+      hasDecision: !!checkData.decision,
+      hasMarketPrice: !!checkData.market_price,
+      fullResponse: checkData
+    });
+    
+    // Validate response
+    if (typeof checkData.complete !== 'boolean') {
+      console.warn('HaggleOS: Invalid response structure:', checkData);
+      continue;
+    }
+    
+    if (checkData.complete === true) {
+      isComplete = true;
+      result = checkData;
+      console.log('✅ HaggleOS: Analysis complete!', result);
+      break; // Exit loop immediately
+    } else {
+      console.log(`⏳ HaggleOS: Still running (state: ${checkData.state})`);
+    }
+    
+  } catch (pollErr) {
+    console.error('HaggleOS: Polling error:', pollErr);
+    // Continue trying even if one poll fails
+  }
+}
 
       if (!result) {
         throw new Error('Timed out waiting for analysis results.');
