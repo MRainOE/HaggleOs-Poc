@@ -1,14 +1,14 @@
 (function () {
-  const ALLOWED_ORIGIN = "http://localhost:3000";
+  const ALLOWED_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000", "https://haggle-os-poc.vercel.app"];
   const ALLOWED_PATH_PREFIX = "/dashboard";
   const MESSAGE_TYPES = new Set(["GET_SETTINGS", "SET_SETTINGS", "GET_HISTORY", "CLEAR_HISTORY"]);
 
   function isFromDashboard(event) {
     return (
       event.source === window &&
-      event.origin === ALLOWED_ORIGIN &&
+      ALLOWED_ORIGINS.includes(event.origin) &&
       typeof location === "object" &&
-      location.origin === ALLOWED_ORIGIN &&
+      ALLOWED_ORIGINS.includes(location.origin) &&
       location.pathname.startsWith(ALLOWED_PATH_PREFIX)
     );
   }

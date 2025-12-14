@@ -1,4 +1,4 @@
-const DEFAULT_API_BASE = "http://localhost:3000";
+const DEFAULT_API_BASE = "https://haggle-os-poc.vercel.app";
 const DASHBOARD_PATH = "/dashboard";
 
 async function getDashboardUrl() {

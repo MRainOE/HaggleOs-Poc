@@ -365,7 +365,8 @@ function attachPanelCloseButton(panel) {
 // Save one entry into history (max 5 items)
 function addHistoryEntry(result, payload) {
   try {
-    if (!chrome.storage.sync) {
+    // If extension was reloaded/unloaded, bail to avoid "Extension context invalidated"
+    if (!chrome.runtime?.id || !chrome.storage?.sync) {
       console.warn('HaggleOS: chrome.storage.sync not available for history');
       return;
     }
@@ -385,14 +386,18 @@ function addHistoryEntry(result, payload) {
     timestamp: Date.now(),
   };
 
-  chrome.storage.sync.get(['haggleosHistory'], (data) => {
-    const oldHistory = Array.isArray(data.haggleosHistory) ? data.haggleosHistory : [];
-    const newHistory = [entry, ...oldHistory].slice(0, MAX_HISTORY_ITEMS);
+  try {
+    chrome.storage.sync.get(['haggleosHistory'], (data) => {
+      const oldHistory = Array.isArray(data.haggleosHistory) ? data.haggleosHistory : [];
+      const newHistory = [entry, ...oldHistory].slice(0, MAX_HISTORY_ITEMS);
 
-    chrome.storage.sync.set({ haggleosHistory: newHistory }, () => {
-      console.log('HaggleOS: Saved history entry. Total:', newHistory.length);
+      chrome.storage.sync.set({ haggleosHistory: newHistory }, () => {
+        console.log('HaggleOS: Saved history entry. Total:', newHistory.length);
+      });
     });
-  });
+  } catch (err) {
+    console.warn('HaggleOS: Failed to save history (context may be invalidated)', err);
+  }
 }
 
 // Render history view in the main panel
