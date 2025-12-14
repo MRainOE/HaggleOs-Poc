@@ -11,8 +11,6 @@
 
 Tracks - Kestra, Vercel 
 
-[🎥 Watch Demo Video](#) · [🚀 Live Demo](#) · [🐛 Report Bug](#)
-
 </div>
 
 ---
@@ -163,6 +161,16 @@ User copies message → Pastes in eBay → Sends offer 🎉
 
 ---
 
+## 📝 Project Description
+
+HaggleOS is an intelligent Chrome extension that transforms online shopping into a data-driven negotiation powerhouse. When browsing eBay listings, it deploys three specialized AI agents that analyze market prices, inspect photos for defects, and generate persuasive negotiation messages.
+
+**Built with Kestra + Vercel** to showcase the power of multi-agent orchestration in real-world applications. Kestra handles the complex AI workflow execution with conditional logic and secrets management, while Vercel provides the fast API layer and beautiful dashboard interface.
+
+**Real Impact:** Helps shoppers make informed decisions and save money by providing instant market analysis, visual defect detection, and ready-to-send negotiation messages tailored to each listing.
+
+---
+
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -253,13 +261,15 @@ HaggleOs-Poc/
 
 ---
 
-## 🏆 Why HaggleOS Wins
+## 🏆 Key Highlights
 
-1. **Multi-Agent Architecture** - Three specialized AI agents working in sequence
-2. **Kestra Orchestration** - Robust workflow engine with conditional logic, secrets management, and webhook triggers
-3. **Hybrid Cloud** - Combines Vercel's edge network with Google Cloud's compute power
-4. **Real User Value** - Solves actual pain points in online shopping
-5. **Production Ready** - Deployed, tested, and working on live eBay listings
+**Multi-Agent Orchestration** - Three specialized AI agents (Market Analyst, Vision Inspector, Negotiator) work sequentially with conditional logic powered by Kestra
+
+**Hybrid Architecture** - Combines Chrome Extension + Vercel's edge network + Kestra on Google Cloud for optimal performance
+
+**Real User Value** - Solves actual pain points: price research, photo inspection, and negotiation message writing—all automated
+
+**Production Ready** - Deployed and tested on live eBay listings with webhook triggers, polling mechanisms, and error handling
 
 ---
 
