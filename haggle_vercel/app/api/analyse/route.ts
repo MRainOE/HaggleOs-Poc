@@ -104,8 +104,7 @@ export async function POST(request: Request) {
       const data = await getExecutionStatus(body.executionId, KESTRA_BASE_URL, KESTRA_API_TOKEN);
       const current = data?.state?.current;
 
-      // If still running, return complete: false
-      if (current === "RUNNING" || current === "CREATED" || current === "QUEUED") {
+      if (current === "RUNNING" || current === "CREATED" || current === "QUEUED" || current === "UNKNOWN") {
         return NextResponse.json(
           { complete: false, state: current },
           { headers: CORS_HEADERS }
