@@ -6,9 +6,9 @@ inputs:
     type: STRING
   - id: price_value
     type: FLOAT
-    defaults: "USD"
   - id: currency
     type: STRING
+    defaults: "USD"
   - id: imageUrls
     type: JSON
   - id: condition
@@ -30,9 +30,9 @@ tasks:
       SERP_API_KEY: "{{ secret('SERP_API_KEY') }}"
       GOOGLE_API_KEY: "{{ secret('GEMINI_API_KEY') }}"
 
-      INPUT_TITLE: "{{ inputs.title }}"
-      INPUT_PRICE: "{{ inputs.price_value }}"
-      INPUT_CONDITION: "{{ inputs.condition }}"
+      INPUT_TITLE: "{{ trigger.body.title }}"
+      INPUT_PRICE: "{{ trigger.body.price_value }}"
+      INPUT_CONDITION: "{{ trigger.body.condition }}"
     script: |
       import google.generativeai as genai
       from serpapi import GoogleSearch
@@ -127,7 +127,7 @@ tasks:
         env:
           GOOGLE_API_KEY: "{{ secret('GEMINI_API_KEY') }}"
           
-          INPUT_IMAGES: "{{ inputs.imageUrls }}"
+          INPUT_IMAGES: "{{ trigger.body.imageUrls }}"
         script: |
           import google.generativeai as genai
           import requests
