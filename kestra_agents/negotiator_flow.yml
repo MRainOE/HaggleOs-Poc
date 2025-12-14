@@ -1,0 +1,292 @@
+id: haggle-decision-engine
+namespace: com.haggleos
+
+inputs:
+  - id: title
+    type: STRING
+  - id: price_value
+    type: FLOAT
+    defaults: "USD"
+  - id: currency
+    type: STRING
+  - id: imageUrls
+    type: JSON
+  - id: condition
+    type: STRING
+
+triggers:
+  - id: api
+    type: io.kestra.plugin.core.trigger.Webhook
+    key: "haggle-key"
+
+tasks:
+  # ---------------------------------------------------------
+  # AGENT A: Market Analyst
+  # ---------------------------------------------------------
+  - id: agent_a
+    type: io.kestra.plugin.scripts.python.Script
+    containerImage: negotiator:v1
+    env:
+      SERP_API_KEY: "{{ secret('SERP_API_KEY') }}"
+      GOOGLE_API_KEY: "{{ secret('GEMINI_API_KEY') }}"
+
+      INPUT_TITLE: "{{ inputs.title }}"
+      INPUT_PRICE: "{{ inputs.price_value }}"
+      INPUT_CONDITION: "{{ inputs.condition }}"
+    script: |
+      import google.generativeai as genai
+      from serpapi import GoogleSearch
+      from kestra import Kestra
+      import os
+      import json
+
+      # 1. SETUP GEMINI
+      model = genai.GenerativeModel('gemini-2.5-flash', generation_config={"response_mime_type": "application/json"})
+
+      # MAPPING INPUTS
+      query = os.environ["INPUT_TITLE"]
+      my_price = float(os.environ["INPUT_PRICE"])
+      my_condition = os.environ["INPUT_CONDITION"]
+
+      # 2. FETCH DATA (Market Context)
+      shop_params = { "engine": "google_shopping", "q": query, "api_key": os.environ["SERP_API_KEY"], "gl": "us" }
+      
+      results = GoogleSearch(shop_params).get_dict().get("shopping_results", [])[:15]
+      candidates = [{"title": i.get("title"), "price": i.get("extracted_price"), "link": i.get("link")} for i in results]
+
+      if not candidates:
+          Kestra.outputs({
+              "verdict": "UNKNOWN",
+              "warning_message": "No market data found.",
+              "market_price": my_price,
+              "suggested_offer": round(my_price * 0.80, 2),
+              "alternatives": []
+          })
+          exit(0)
+
+      json_structure = "{ 'matches': [] }"
+      prompt = f"Identify matches for '{query}' from this list: {json.dumps(candidates)}. Return JSON " + json_structure
+      
+      try:
+          resp = model.generate_content(prompt)
+          valid_items = json.loads(resp.text).get("matches", [])
+      except:
+          valid_items = []
+
+      if not valid_items:
+          Kestra.outputs({
+              "verdict": "UNKNOWN",
+              "warning_message": "No exact matches found.",
+              "market_price": my_price,
+              "suggested_offer": round(my_price * 0.80, 2),
+              "alternatives": []
+          })
+          exit(0)
+
+      # 4. PRICE LOGIC
+      cheapest_3 = sorted(valid_items, key=lambda x: x['price'])[:3]
+      benchmark = cheapest_3[0]['price'] 
+      
+      suggested_offer_val = my_price * 0.90
+
+      verdict = "FAIL"
+      warning_msg = ""
+      
+      if my_condition == 'Used':
+          target = benchmark * 0.90
+          if my_price <= target:
+              verdict = "PASS"
+          else:
+              warning_msg = f"Overpriced. Used items should be < ${target:.2f}."
+      else:
+          if my_price <= benchmark:
+              verdict = "PASS"
+          else:
+              warning_msg = f"Found it cheaper! Lowest match is ${benchmark:.2f}."
+
+      Kestra.outputs({
+          "verdict": verdict,
+          "warning_message": warning_msg,
+          "alternatives": cheapest_3,
+          "market_price": benchmark,
+          "suggested_offer": round(suggested_offer_val, 2)
+      })
+  # ---------------------------------------------------------
+  # CONDITIONAL BLOCK: Only run if Verdict is PASS
+  # ---------------------------------------------------------
+  - id: negotiation_logic
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ outputs.agent_a.vars.verdict == 'PASS' }}"
+    then:
+      # ---------------------------------------------------------
+      # AGENT B: Vision Inspector
+      # ---------------------------------------------------------
+      - id: agent_b
+        type: io.kestra.plugin.scripts.python.Script
+        containerImage: negotiator:v1
+        env:
+          GOOGLE_API_KEY: "{{ secret('GEMINI_API_KEY') }}"
+          
+          INPUT_IMAGES: "{{ inputs.imageUrls }}"
+        script: |
+          import google.generativeai as genai
+          import requests
+          from PIL import Image
+          from io import BytesIO
+          from kestra import Kestra
+          import os
+          import json
+
+          # 1. SETUP GEMINI 
+          genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
+          model = genai.GenerativeModel('gemini-2.5-flash', generation_config={"response_mime_type": "application/json"})
+
+          # 2. GET IMAGES (Dynamic)
+          # Kestra passes the input array as a string representation, so we parse it safely.
+          try:
+              images_list = json.loads(os.environ["INPUT_IMAGES"])
+          except:
+              import ast
+              images_list = ast.literal_eval(os.environ["INPUT_IMAGES"])
+          
+          all_results = []
+
+          # 3. ANALYZE IMAGES
+          for url in images_list:
+              result_entry = {"url": url}
+              
+              try:
+                  # Download image
+                  response = requests.get(url, timeout=10)
+                  response.raise_for_status()
+                  img = Image.open(BytesIO(response.content))
+                  
+                  # Ask Gemini
+                  prompt = "Analyze visual condition (New/Used/Damaged) and defects. Return JSON: { 'visual_condition': str, 'damage_detected': bool, 'description': str }"
+                  resp = model.generate_content([prompt, img])
+                  
+                  # Parse Gemini response
+                  analysis = json.loads(resp.text)
+                  
+                  result_entry.update(analysis)
+                  result_entry["status"] = "success"
+
+              except Exception as e:
+                  result_entry.update({
+                      "visual_condition": "Unknown",
+                      "damage_detected": False,
+                      "description": f"Check failed: {str(e)}",
+                      "status": "error"
+                  })
+              
+              all_results.append(result_entry)
+
+          # 4. RETURN RESULTS
+          Kestra.outputs({"description": all_results})
+
+  # ---------------------------------------------------------
+  # AGENT C: The Message Generator (Returns 3 Options)
+  # ---------------------------------------------------------
+  - id: agent_c
+    type: io.kestra.plugin.scripts.python.Script
+    containerImage: negotiator:v1
+    env:
+      GOOGLE_API_KEY: "{{ secret('GEMINI_API_KEY') }}"
+      
+      INPUT_OFFER: "{{ outputs.agent_a.vars.suggested_offer | default(0.0) }}"
+      
+      INPUT_DEFECTS: "{{ outputs.agent_b.vars.description | toJson }}"
+    script: |
+      import google.generativeai as genai
+      from kestra import Kestra
+      import os
+      import json
+
+      genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
+      
+      try:
+          model = genai.GenerativeModel('gemini-2.5-flash')
+      except:
+          model = genai.GenerativeModel('gemini-2.0-flash')
+
+      # 1. PARSE DATA
+      try:
+          # If Agent B ran, this is a JSON string of a list of dicts
+          defects_data = json.loads(os.environ.get("INPUT_DEFECTS", "[]"))
+          
+          # We want to extract just the human-readable text to send to the LLM
+          if isinstance(defects_data, list):
+              # Combine all "description" fields into one string
+              defects_summary = "; ".join([d.get("description", "") for d in defects_data if "description" in d])
+          else:
+              defects_summary = str(defects_data)
+              
+          if not defects_summary:
+              defects_summary = "None visible"
+              
+      except:
+          defects_summary = "None visible"
+
+      try:
+          offer_val = float(os.environ.get("INPUT_OFFER", 0))
+          price_text = f"${offer_val:.2f}" if offer_val > 0 else "a lower price"
+      except:
+          price_text = "a fair price"
+
+      # 2. DEFINE STRATEGIES
+      strategies = [
+          {"type": "Polite", "tone": "Respectful, focusing on quick payment."},
+          {"type": "Aggressive", "tone": "Direct, heavily emphasizing the defects found: " + defects_summary},
+          {"type": "Concise", "tone": "One sentence, casual, 'take it or leave it'."}
+      ]
+
+      generated_messages = []
+
+      # 3. GENERATE CONTENT
+      for strategy in strategies:
+          prompt = f"""
+          Write an eBay negotiation message.
+          - Offer: {price_text}
+          - Defects detected: {defects_summary}
+          - Tone: {strategy['tone']}
+          - Max Length: 30 words.
+          - Return ONLY the message text.
+          """
+          
+          try:
+              resp = model.generate_content(prompt)
+              msg_text = resp.text.strip().replace('"', '')
+              generated_messages.append({
+                  "style": strategy['type'],
+                  "message": msg_text
+              })
+          except:
+              generated_messages.append({"style": strategy['type'], "message": "Error generating."})
+
+      # Return the List of 3 messages
+      Kestra.outputs({"messages": generated_messages})
+
+# ---------------------------------------------------------
+# FINAL OUTPUTS (Crash-Proof Version)
+# ---------------------------------------------------------
+outputs:
+  - id: decision
+    type: STRING
+    value: "{{ outputs.agent_a.vars.verdict == 'PASS' ? 'NEGOTIATE' : 'ABORT' }}"
+
+  - id: market_price
+    type: FLOAT
+    value: "{{ outputs.agent_a.vars.market_price | default(0.0) }}"
+
+  - id: suggested_offer
+    type: FLOAT
+    value: "{{ outputs.agent_a.vars.suggested_offer | default(0.0) }}"
+
+  - id: defects_found
+    type: JSON
+    value: "{{ outputs.agent_b.vars.description | default([]) }}"
+
+  - id: draft_messages
+    type: JSON
+    value: "{{ outputs.agent_c.vars.messages | default([]) }}"
+
